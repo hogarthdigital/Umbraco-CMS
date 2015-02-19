@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Data.SqlClient;
 using System.Linq;
 using System.Web;
 using System.Web.Configuration;
@@ -34,7 +35,7 @@ namespace Umbraco.Core.Configuration
         private static Version _version;
         private static readonly object Locker = new object();
         //make this volatile so that we can ensure thread safety with a double check lock
-    	private static volatile string _reservedUrlsCache;
+        private static volatile string _reservedUrlsCache;
         private static string _reservedPathsCache;
         private static StartsWithContainer _reservedList = new StartsWithContainer();
         private static string _reservedPaths;
@@ -64,14 +65,14 @@ namespace Umbraco.Core.Configuration
             ResetInternal();
         }
 
-    	/// <summary>
+        /// <summary>
         /// Gets the reserved urls from web.config.
         /// </summary>
         /// <value>The reserved urls.</value>
         public static string ReservedUrls
         {
             get
-            {                
+            {
                 if (_reservedUrls == null)
                 {
                     var urls = ConfigurationManager.AppSettings.ContainsKey("umbracoReservedUrls")
@@ -79,7 +80,7 @@ namespace Umbraco.Core.Configuration
                                    : string.Empty;
 
                     //ensure the built on (non-changeable) reserved paths are there at all times
-                    _reservedUrls = StaticReservedUrls + urls;    
+                    _reservedUrls = StaticReservedUrls + urls;
                 }
                 return _reservedUrls;
             }
@@ -170,7 +171,7 @@ namespace Umbraco.Core.Configuration
         /// This will return the MVC area that we will route all custom routes through like surface controllers, etc...
         /// We will use the 'Path' (default ~/umbraco) to create it but since it cannot contain '/' and people may specify a path of ~/asdf/asdf/admin
         /// we will convert the '/' to '-' and use that as the path. its a bit lame but will work.
-		/// 
+        /// 
         /// We also make sure that the virtual directory (SystemDirectories.Root) is stripped off first, otherwise we'd end up with something
         /// like "MyVirtualDirectory-Umbraco" instead of just "Umbraco".
         /// </remarks>
@@ -185,7 +186,7 @@ namespace Umbraco.Core.Configuration
                 var path = Path;
                 if (path.StartsWith(SystemDirectories.Root)) // beware of TrimStart, see U4-2518
                     path = path.Substring(SystemDirectories.Root.Length);
-			    return path.TrimStart('~').TrimStart('/').Replace('/', '-').Trim().ToLower();
+                return path.TrimStart('~').TrimStart('/').Replace('/', '-').Trim().ToLower();
             }
         }
 
@@ -212,17 +213,29 @@ namespace Umbraco.Core.Configuration
         {
             get
             {
-                var settings = ConfigurationManager.ConnectionStrings[UmbracoConnectionName];
                 var connectionString = string.Empty;
 
-                if (settings != null)
-                {
-                    connectionString = settings.ConnectionString;
+                var isNestleConnectionStringManagerEnabled = GetIsNestleConnectionStringManagerEnabled();
 
-                    // The SqlCe connectionString is formatted slightly differently, so we need to update it
-                    if (settings.ProviderName.Contains("SqlServerCe"))
-                        connectionString = string.Format("datalayer=SQLCE4Umbraco.SqlCEHelper,SQLCE4Umbraco;{0}", connectionString);
+                if (isNestleConnectionStringManagerEnabled)
+                {
+                    Utilities.ConnectionStringManager.ConnectionStringProvider csp = new Utilities.ConnectionStringManager.ConnectionStringProvider();
+                    connectionString = csp.GetConnectionString("Stouffers_CMS.ConnectionString");
                 }
+                else
+                {
+                    var settings = ConfigurationManager.ConnectionStrings[UmbracoConnectionName];
+
+                    if (settings != null)
+                    {
+                        connectionString = settings.ConnectionString;
+
+                        // The SqlCe connectionString is formatted slightly differently, so we need to update it
+                        if (settings.ProviderName.Contains("SqlServerCe"))
+                            connectionString = string.Format("datalayer=SQLCE4Umbraco.SqlCEHelper,SQLCE4Umbraco;{0}", connectionString);
+                    }
+                }
+
 
                 return connectionString;
             }
@@ -237,11 +250,35 @@ namespace Umbraco.Core.Configuration
                     else
                     {
                         ApplicationContext.Current.DatabaseContext.ConfigureDatabaseConnection(value);
-                    } 
+                    }
                 }
             }
         }
 
+        private static bool GetIsNestleConnectionStringManagerEnabled()
+        {
+            var isNestleConnectionStringManagerEnabled = false;
+
+            if (ConfigurationManager.AppSettings.ContainsKey(NestleConnectionStringManagerEnabledName))
+            {
+                var isNestleConnectionStringManagerEnabledString = ConfigurationManager.AppSettings[NestleConnectionStringManagerEnabledName];
+                if (!bool.TryParse(isNestleConnectionStringManagerEnabledString, out isNestleConnectionStringManagerEnabled))
+                {
+                    isNestleConnectionStringManagerEnabled = false;
+                }
+            }
+            return isNestleConnectionStringManagerEnabled;
+        }
+
+        public static bool IsNestleConnectionStringManagerEnabled
+        {
+            get
+            {
+                return GetIsNestleConnectionStringManagerEnabled();
+            }
+        }
+
+        public const string NestleConnectionStringManagerEnabledName = "nestleConnectionStringManagerEnabled";
         public const string UmbracoConnectionName = "umbracoDbDSN";
         public const string UmbracoMigrationName = "Umbraco";
 
@@ -262,7 +299,7 @@ namespace Umbraco.Core.Configuration
                 SaveSetting("umbracoConfigurationStatus", value);
             }
         }
-        
+
         /// <summary>
         /// Gets or sets the Umbraco members membership providers' useLegacyEncoding state. This will return a boolean
         /// </summary>
@@ -278,7 +315,7 @@ namespace Umbraco.Core.Configuration
                 SetMembershipProvidersLegacyEncoding(Constants.Conventions.Member.UmbracoMemberProviderName, value);
             }
         }
-        
+
         /// <summary>
         /// Gets or sets the Umbraco users membership providers' useLegacyEncoding state. This will return a boolean
         /// </summary>
@@ -294,7 +331,7 @@ namespace Umbraco.Core.Configuration
                 SetMembershipProvidersLegacyEncoding(UmbracoConfig.For.UmbracoSettings().Providers.DefaultBackOfficeUserProvider, value);
             }
         }
-		
+
         /// <summary>
         /// Saves a setting into the configuration file.
         /// </summary>
@@ -335,7 +372,7 @@ namespace Umbraco.Core.Configuration
                 setting.Remove();
                 xml.Save(fileName, SaveOptions.DisableFormatting);
                 ConfigurationManager.RefreshSection("appSettings");
-            }        
+            }
         }
 
         private static void SetMembershipProvidersLegacyEncoding(string providerName, bool useLegacyEncoding)
@@ -357,16 +394,16 @@ namespace Umbraco.Core.Configuration
 
             var membershipConfigs = webConfigXml.XPathSelectElements("configuration/system.web/membership/providers/add").ToList();
 
-            if (membershipConfigs.Any() == false) 
+            if (membershipConfigs.Any() == false)
                 return;
 
             var provider = membershipConfigs.SingleOrDefault(c => c.Attribute("name") != null && c.Attribute("name").Value == providerName);
 
-            if (provider == null) 
+            if (provider == null)
                 return;
 
             provider.SetAttributeValue("useLegacyEncoding", useLegacyEncoding);
-            
+
             webConfigXml.Save(webConfigFilename, SaveOptions.DisableFormatting);
         }
 
@@ -379,7 +416,7 @@ namespace Umbraco.Core.Configuration
                 return false;
             }
 
-            return membershipProvider.UseLegacyEncoding;            
+            return membershipProvider.UseLegacyEncoding;
         }
 
         /// <summary>
@@ -522,7 +559,7 @@ namespace Umbraco.Core.Configuration
             get
             {
                 //defaults to false
-                return ConfigurationManager.AppSettings.ContainsKey("umbracoContentXMLUseLocalTemp") 
+                return ConfigurationManager.AppSettings.ContainsKey("umbracoContentXMLUseLocalTemp")
                     && bool.Parse(ConfigurationManager.AppSettings["umbracoContentXMLUseLocalTemp"]); //default to false
             }
         }
@@ -776,8 +813,8 @@ namespace Umbraco.Core.Configuration
                         foreach (string reservedUrl in _reservedUrlsCache.Split(new[] { "," }, StringSplitOptions.RemoveEmptyEntries))
                         {
                             if (string.IsNullOrWhiteSpace(reservedUrl))
-                               continue;
-                            
+                                continue;
+
 
                             //resolves the url to support tilde chars
                             string reservedUrlTrimmed = IOHelper.ResolveUrl(reservedUrl.Trim()).Trim().ToLower();
@@ -790,7 +827,7 @@ namespace Umbraco.Core.Configuration
                             bool trimEnd = !reservedPath.EndsWith("/");
                             if (string.IsNullOrWhiteSpace(reservedPath))
                                 continue;
-                           
+
                             //resolves the url to support tilde chars
                             string reservedPathTrimmed = IOHelper.ResolveUrl(reservedPath.Trim()).Trim().ToLower();
 

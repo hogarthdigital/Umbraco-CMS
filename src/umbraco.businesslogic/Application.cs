@@ -44,18 +44,25 @@ namespace umbraco.BusinessLogic
 
                     try
                     {
-                        const string umbracoDsn = Umbraco.Core.Configuration.GlobalSettings.UmbracoConnectionName;
-                    
-                        var databaseSettings = ConfigurationManager.ConnectionStrings[umbracoDsn];
-                        if (databaseSettings != null)
-                            connectionString = databaseSettings.ConnectionString;
+                        if (Umbraco.Core.Configuration.GlobalSettings.IsNestleConnectionStringManagerEnabled)
+                        {
+                            connectionString = Umbraco.Core.Configuration.GlobalSettings.DbDsn;
+                        }
+                        else
+                        {
+                            const string umbracoDsn = Umbraco.Core.Configuration.GlobalSettings.UmbracoConnectionName;
 
-                        // During upgrades we might still have the old appSettings connectionstring, and not the new one, so get that one instead
-                        if (string.IsNullOrWhiteSpace(connectionString) &&
-                            ConfigurationManager.AppSettings.ContainsKey(umbracoDsn))
-                            connectionString = ConfigurationManager.AppSettings[umbracoDsn];
+                            var databaseSettings = ConfigurationManager.ConnectionStrings[umbracoDsn];
+                            if (databaseSettings != null)
+                                connectionString = databaseSettings.ConnectionString;
 
-                        _sqlHelper = DataLayerHelper.CreateSqlHelper(connectionString, false);
+                            // During upgrades we might still have the old appSettings connectionstring, and not the new one, so get that one instead
+                            if (string.IsNullOrWhiteSpace(connectionString) &&
+                                ConfigurationManager.AppSettings.ContainsKey(umbracoDsn))
+                                connectionString = ConfigurationManager.AppSettings[umbracoDsn];
+                        }
+
+                        _sqlHelper = DataLayerHelper.CreateSqlHelper(connectionString, false, forceProvidedConnection: Umbraco.Core.Configuration.GlobalSettings.IsNestleConnectionStringManagerEnabled);
                     }
                     catch(Exception ex)
                     {
