@@ -45,7 +45,7 @@ namespace umbraco.DataLayer
             return CreateSqlHelper(connectionString, true);
         }
 
-        public static ISqlHelper CreateSqlHelper(string connectionString, bool forceLegacyConnection)
+        public static ISqlHelper CreateSqlHelper(string connectionString, bool forceLegacyConnection, bool forceProvidedConnection = false)
         {
             /* check arguments */
             if (string.IsNullOrEmpty(connectionString))
@@ -55,8 +55,8 @@ namespace umbraco.DataLayer
             {
                 connectionString = connectionString.Replace("Datasource", "Data Source");
 
-                if(connectionString.Contains(@"|\") == false)
-                connectionString = connectionString.Insert(connectionString.LastIndexOf('|') + 1, "\\");
+                if (connectionString.Contains(@"|\") == false)
+                    connectionString = connectionString.Insert(connectionString.LastIndexOf('|') + 1, "\\");
 
                 connectionString = string.Format("datalayer=SQLCE4Umbraco.SqlCEHelper,SQLCE4Umbraco;{0}", connectionString);
             }
@@ -73,8 +73,10 @@ namespace umbraco.DataLayer
             }
 
             var connectionStringSettings = ConfigurationManager.ConnectionStrings[Umbraco.Core.Configuration.GlobalSettings.UmbracoConnectionName];
-            
-            if (forceLegacyConnection == false && connectionStringSettings != null)
+
+            if (forceProvidedConnection)
+                _connectionString = connectionString;
+            else if (forceLegacyConnection == false && connectionStringSettings != null)
                 SetDataHelperNames(connectionStringSettings);
             else
                 SetDataHelperNamesLegacyConnectionString(connectionStringBuilder);
