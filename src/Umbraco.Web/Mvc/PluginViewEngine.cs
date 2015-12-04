@@ -1,15 +1,14 @@
 using System.IO;
 using System.Linq;
 using System.Web.Mvc;
-using Microsoft.Web.Mvc;
 using Umbraco.Core.IO;
 
 namespace Umbraco.Web.Mvc
 {
-	/// <summary>
-	/// A view engine to look into the App_Plugins folder for views for packaged controllers
-	/// </summary>
-	public class PluginViewEngine : FixedRazorViewEngine
+    /// <summary>
+    /// A view engine to look into the App_Plugins folder for views for packaged controllers
+    /// </summary>
+    public class PluginViewEngine : RazorViewEngine
 	{
 		
 		/// <summary>
