@@ -19,6 +19,7 @@ using UmbracoExamine.DataServices;
 using Examine;
 using System.IO;
 using System.Xml.Linq;
+using Lucene.Net.Store;
 using UmbracoExamine.LocalStorage;
 
 namespace UmbracoExamine
@@ -65,10 +66,24 @@ namespace UmbracoExamine
         /// Used for unit tests
         /// </summary>
         internal static bool? DisableInitializationCheck = null;
-        private readonly LocalTempStorageIndexer _localTempStorageHelper = new LocalTempStorageIndexer();
+        private readonly LocalTempStorageIndexer _localTempStorageIndexer = new LocalTempStorageIndexer();
         private BaseLuceneSearcher _internalTempStorageSearcher = null;
 
         #region Properties
+
+        public bool UseTempStorage
+        {
+            get { return _localTempStorageIndexer.LuceneDirectory != null; }
+        }
+
+        public string TempStorageLocation
+        {
+            get
+            {
+                if (UseTempStorage == false) return string.Empty;
+                return _localTempStorageIndexer.TempPath;
+            }
+        }
 
         /// <summary>
         /// If true, the IndexingActionHandler will be run to keep the default index up to date.
@@ -142,55 +157,68 @@ namespace UmbracoExamine
                 EnableDefaultEventHandler = enabled;
             }         
 
-            DataService.LogService.AddVerboseLog(-1, string.Format("{0} indexer initializing", name));
-            
-            //Before we initialize the base provider which is going to setup all of the directory structures based on the index
-            // set, we want to dynamically override the index working folder based on a given token. Currently we only support one
-            // and that is {machinename}
-            ExamineHelper.ReplaceTokensInIndexPath(name, config, "Indexer", () => IndexerData != null);
+            DataService.LogService.AddVerboseLog(-1, string.Format("{0} indexer initializing", name));               
 
             base.Initialize(name, config);
 
             if (config["useTempStorage"] != null)
             {
-                //Use the temp storage directory which will store the index in the local/codegen folder, this is useful
-                // for websites that are running from a remove file server and file IO latency becomes an issue
-                var attemptUseTempStorage = config["useTempStorage"].TryConvertTo<LocalStorageType>();
-                if (attemptUseTempStorage)
+                var fsDir = base.GetLuceneDirectory() as FSDirectory;
+                if (fsDir != null)
                 {
-                    
-                    var indexSet = IndexSets.Instance.Sets[IndexSetName];
-                    var configuredPath = indexSet.IndexPath;
+                    //Use the temp storage directory which will store the index in the local/codegen folder, this is useful
+                    // for websites that are running from a remove file server and file IO latency becomes an issue
+                    var attemptUseTempStorage = config["useTempStorage"].TryConvertTo<LocalStorageType>();
+                    if (attemptUseTempStorage)
+                    {
 
-                    _localTempStorageHelper.Initialize(config, configuredPath, base.GetLuceneDirectory(), IndexingAnalyzer, attemptUseTempStorage.Result);
+                        var indexSet = IndexSets.Instance.Sets[IndexSetName];
+                        var configuredPath = indexSet.IndexPath;
+
+                        _localTempStorageIndexer.Initialize(config, configuredPath, fsDir, IndexingAnalyzer, attemptUseTempStorage.Result);
+                    }
                 }
+               
             }
         }
 
         #endregion
+
+        /// <summary>
+        /// Used to aquire the internal searcher
+        /// </summary>
+        private readonly object _internalSearcherLocker = new object();
 
         protected override BaseSearchProvider InternalSearcher
         {
             get
             {
                 //if temp local storage is configured use that, otherwise return the default
-                if (_localTempStorageHelper.LuceneDirectory != null)
+                if (UseTempStorage)
                 {
-                    //create one if one has not been created already
-                    return _internalTempStorageSearcher 
-                        ?? (_internalTempStorageSearcher = new LuceneSearcher(_localTempStorageHelper.LuceneDirectory, IndexingAnalyzer));
+                    if (_internalTempStorageSearcher == null)
+                    {
+                        lock (_internalSearcherLocker)
+                        {
+                            if (_internalTempStorageSearcher == null)
+                            {
+                                _internalTempStorageSearcher = new LuceneSearcher(GetIndexWriter(), IndexingAnalyzer);
+                            }
+                        }
+                    }
+                    return _internalTempStorageSearcher;
                 }
 
                 return base.InternalSearcher;
             }
         }
-
+        
         public override Lucene.Net.Store.Directory GetLuceneDirectory()
         {
             //if temp local storage is configured use that, otherwise return the default
-            if (_localTempStorageHelper.LuceneDirectory != null)
+            if (UseTempStorage)
             {
-                return _localTempStorageHelper.LuceneDirectory;
+                return _localTempStorageIndexer.LuceneDirectory;
             }
 
             return base.GetLuceneDirectory();
@@ -200,10 +228,10 @@ namespace UmbracoExamine
         protected override IndexWriter CreateIndexWriter()
         {
             //if temp local storage is configured use that, otherwise return the default
-            if (_localTempStorageHelper.LuceneDirectory != null)
+            if (UseTempStorage)
             {
                 var directory = GetLuceneDirectory();
-                return new IndexWriter(directory, IndexingAnalyzer,
+                return new IndexWriter(GetLuceneDirectory(), IndexingAnalyzer,
                     DeletePolicyTracker.Current.GetPolicy(directory),
                     IndexWriter.MaxFieldLength.UNLIMITED);
             }

@@ -66,15 +66,16 @@ function mediaEditController($scope, $routeParams, appState, mediaResource, enti
                 serverValidationManager.executeAndClearAllSubscriptions();
 
                 syncTreeNode($scope.content, data.path, true);
-                
-            });
+               
+                if ($scope.content.parentId && $scope.content.parentId != -1) {
+                    //We fetch all ancestors of the node to generate the footer breadcrump navigation
+                    entityResource.getAncestors($routeParams.id, "media")
+                        .then(function (anc) {
+                            $scope.ancestors = anc;
+                        });
+                }
 
-        //We fetch all ancestors of the node to generate the footer breadcrump navigation
-        entityResource.getAncestors($routeParams.id, "media")
-            .then(function(anc) {
-                anc.pop();
-                $scope.ancestors = anc;
-            });
+            });  
     }
     
     $scope.save = function () {
@@ -107,6 +108,13 @@ function mediaEditController($scope, $routeParams, appState, mediaResource, enti
                         rebindCallback: contentEditingHelper.reBindChangedProperties($scope.content, err.data)
                     });
                     
+                    //show any notifications
+                    if (angular.isArray(err.data.notifications)) {
+                        for (var i = 0; i < err.data.notifications.length; i++) {
+                            notificationsService.showNotification(err.data.notifications[i]);
+                        }
+                    }
+
                     editorState.set($scope.content);
                     $scope.busy = false;
                 });

@@ -26,12 +26,16 @@ using Umbraco.Web.Models.Mapping;
 using Umbraco.Web.Mvc;
 using Umbraco.Web.WebApi;
 using System.Linq;
+using System.Runtime.Serialization;
 using Umbraco.Web.WebApi.Binders;
 using Umbraco.Web.WebApi.Filters;
 using umbraco;
 using umbraco.BusinessLogic.Actions;
 using Constants = Umbraco.Core.Constants;
 using Umbraco.Core.Configuration;
+using Umbraco.Core.Persistence.FaultHandling;
+using Umbraco.Web.UI;
+using Notification = Umbraco.Web.Models.ContentEditing.Notification;
 
 namespace Umbraco.Web.Editors
 {
@@ -181,11 +185,23 @@ namespace Umbraco.Web.Editors
             //if the current item is in the recycle bin
             if (foundMedia.IsInRecycleBin() == false)
             {
-                Services.MediaService.MoveToRecycleBin(foundMedia, (int)Security.CurrentUser.Id);
+                var moveResult = Services.MediaService.WithResult().MoveToRecycleBin(foundMedia, (int)Security.CurrentUser.Id);
+                if (moveResult == false)
+                {
+                    //returning an object of INotificationModel will ensure that any pending 
+                    // notification messages are added to the response.
+                    return Request.CreateValidationErrorResponse(new SimpleNotificationModel());
+                }
             }
             else
             {
-                Services.MediaService.Delete(foundMedia, (int)Security.CurrentUser.Id);
+                var deleteResult = Services.MediaService.WithResult().Delete(foundMedia, (int)Security.CurrentUser.Id);
+                if (deleteResult == false)
+                {
+                    //returning an object of INotificationModel will ensure that any pending 
+                    // notification messages are added to the response.
+                    return Request.CreateValidationErrorResponse(new SimpleNotificationModel());
+                }
             }
 
             return Request.CreateResponse(HttpStatusCode.OK);
@@ -233,7 +249,7 @@ namespace Umbraco.Web.Editors
             //      then we cannot continue saving, we can only display errors
             // * If there are validation errors and they were attempting to publish, we can only save, NOT publish and display 
             //      a message indicating this
-            if (!ModelState.IsValid)
+            if (ModelState.IsValid == false)
             {
                 if (ValidationHelper.ModelHasRequiredForPersistenceErrors(contentItem)
                     && (contentItem.Action == ContentSaveAction.SaveNew))
@@ -247,7 +263,7 @@ namespace Umbraco.Web.Editors
             }
 
             //save the item
-            Services.MediaService.Save(contentItem.PersistedContent, (int)Security.CurrentUser.Id);
+            var saveStatus = Services.MediaService.WithResult().Save(contentItem.PersistedContent, (int)Security.CurrentUser.Id);
 
             //return the updated model
             var display = Mapper.Map<IMedia, MediaItemDisplay>(contentItem.PersistedContent);
@@ -260,7 +276,25 @@ namespace Umbraco.Web.Editors
             {
                 case ContentSaveAction.Save:
                 case ContentSaveAction.SaveNew:
-                    display.AddSuccessNotification(ui.Text("speechBubbles", "editMediaSaved"), ui.Text("speechBubbles", "editMediaSavedText"));
+                    if (saveStatus.Success)
+                    {
+                        display.AddSuccessNotification(
+                            Services.TextService.Localize("speechBubbles/editMediaSaved"),
+                            Services.TextService.Localize("speechBubbles/editMediaSavedText"));
+                    }
+                    else
+                    {
+                        AddCancelMessage(display);
+
+                        //If the item is new and the operation was cancelled, we need to return a different
+                        // status code so the UI can handle it since it won't be able to redirect since there
+                        // is no Id to redirect to!
+                        if (saveStatus.Result.StatusType == OperationStatusType.FailedCancelledByEvent && IsCreatingAction(contentItem.Action))
+                        {
+                            throw new HttpResponseException(Request.CreateValidationErrorResponse(display));
+                        }
+                    }
+                    
                     break;                
             }
 
@@ -336,7 +370,7 @@ namespace Umbraco.Web.Editors
         {
             var mediaService = ApplicationContext.Services.MediaService;
             var f = mediaService.CreateMedia(folder.Name, folder.ParentId, Constants.Conventions.MediaTypes.Folder);
-            mediaService.Save(f);
+            mediaService.Save(f, Security.CurrentUser.Id);
 
             return Mapper.Map<IMedia, MediaItemDisplay>(f);
         }
@@ -373,9 +407,7 @@ namespace Umbraco.Web.Editors
             int parentId;
             if (int.TryParse(result.FormData["currentFolder"], out parentId) == false)
             {
-                var response = Request.CreateResponse(HttpStatusCode.BadRequest);
-                response.ReasonPhrase = "The request was not formatted correctly, the currentFolder is not an integer";
-                throw new HttpResponseException(response);
+                return Request.CreateValidationErrorResponse("The request was not formatted correctly, the currentFolder is not an integer");
             }
 
             //ensure the user has access to this folder by parent id!
@@ -384,7 +416,12 @@ namespace Umbraco.Web.Editors
                Security.CurrentUser,
                Services.MediaService, parentId) == false)
             {
-                return Request.CreateResponse(HttpStatusCode.Unauthorized);
+                return Request.CreateResponse(
+                    HttpStatusCode.Unauthorized,
+                    new SimpleNotificationModel(new Notification(
+                        Services.TextService.Localize("speechBubbles/operationFailedHeader"),
+                        Services.TextService.Localize("speechBubbles/invalidUserPermissionsText"),
+                        SpeechBubbleIcon.Warning)));
             }
 
             var tempFiles = new PostedFiles();
@@ -395,7 +432,7 @@ namespace Umbraco.Web.Editors
                 var fileName = file.Headers.ContentDisposition.FileName.Trim(new[] { '\"' });
                 var ext = fileName.Substring(fileName.LastIndexOf('.')+1).ToLower();
 
-                if (!UmbracoConfig.For.UmbracoSettings().Content.DisallowedUploadFiles.Contains(ext))
+                if (UmbracoConfig.For.UmbracoSettings().Content.DisallowedUploadFiles.Contains(ext) == false)
                 {
                     var mediaType = Constants.Conventions.MediaTypes.File;
 
@@ -403,25 +440,53 @@ namespace Umbraco.Web.Editors
                         mediaType = Constants.Conventions.MediaTypes.Image;
 
                     var mediaService = ApplicationContext.Services.MediaService;
-                    var f = mediaService.CreateMedia(fileName, parentId, mediaType);
-                    using (var fs = System.IO.File.OpenRead(file.LocalFileName))
+                    var f = mediaService.CreateMedia(fileName, parentId, mediaType, Security.CurrentUser.Id);
+
+                    var fileInfo = new FileInfo(file.LocalFileName);
+                    var fs = fileInfo.OpenReadWithRetry();
+                    if (fs == null) throw new InvalidOperationException("Could not acquire file stream");
+                    using (fs)
                     {
                         f.SetValue(Constants.Conventions.Media.File, fileName, fs);
                     }
 
-                    mediaService.Save(f);
+                    var saveResult = mediaService.WithResult().Save(f, Security.CurrentUser.Id);
+                    if (saveResult == false)
+                    {
+                        AddCancelMessage(tempFiles,
+                            message: Services.TextService.Localize("speechBubbles/operationCancelledText") + " -- " + fileName,
+                            localizeMessage: false);
+                    }
+                    else
+                    {
+                        tempFiles.UploadedFiles.Add(new ContentItemFile
+                        {
+                            FileName = fileName,
+                            PropertyAlias = Constants.Conventions.Media.File,
+                            TempFilePath = file.LocalFileName
+                        });
+                    }
                 }
                 else
                 {
-                    LogHelper.Warn<MediaController>("Cannot upload file " + file + ", it is not an approved file type");
+                    tempFiles.Notifications.Add(new Notification(
+                        Services.TextService.Localize("speechBubbles/operationFailedHeader"),
+                        "Cannot upload file " + file + ", it is not an approved file type",
+                        SpeechBubbleIcon.Warning));
                 }
+            }
 
-                tempFiles.UploadedFiles.Add(new ContentItemFile
+            //Different response if this is a 'blueimp' request
+            if (Request.GetQueryNameValuePairs().Any(x => x.Key == "origin"))
+            {
+                var origin = Request.GetQueryNameValuePairs().First(x => x.Key == "origin");
+                if (origin.Value == "blueimp")
                 {
-                    FileName = fileName,
-                    PropertyAlias = Constants.Conventions.Media.File,
-                    TempFilePath = file.LocalFileName
-                });
+                    return Request.CreateResponse(HttpStatusCode.OK,
+                        tempFiles, 
+                        //Don't output the angular xsrf stuff, blue imp doesn't like that
+                        new JsonMediaTypeFormatter());
+                }
             }
 
             return Request.CreateResponse(HttpStatusCode.OK, tempFiles);
@@ -431,13 +496,18 @@ namespace Umbraco.Web.Editors
         /// This is used for the response of PostAddFile so that we can analyze the response in a filter and remove the 
         /// temporary files that were created.
         /// </summary>
-        private class PostedFiles : IHaveUploadedFiles
+        [DataContract]
+        private class PostedFiles : IHaveUploadedFiles, INotificationModel
         {
             public PostedFiles()
             {
                 UploadedFiles = new List<ContentItemFile>();
+                Notifications = new List<Notification>();
             }
             public List<ContentItemFile> UploadedFiles { get; private set; }
+
+            [DataMember(Name = "notifications")]
+            public List<Notification> Notifications { get; private set; }
         }
 
         /// <summary>

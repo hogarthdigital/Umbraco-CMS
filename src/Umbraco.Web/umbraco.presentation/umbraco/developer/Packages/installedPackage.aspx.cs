@@ -362,7 +362,7 @@ namespace umbraco.presentation.developer.packages
 
         protected void delPack(object sender, EventArgs e)
         {
-            _pack.Delete();
+            _pack.Delete(UmbracoUser.Id);
             pane_uninstalled.Visible = true;
             pane_uninstall.Visible = false;
         }
@@ -397,9 +397,11 @@ namespace umbraco.presentation.developer.packages
 
                     if (int.TryParse(li.Value, out nId))
                     {
-                        var s = new Template(nId);
-                        s.RemoveAllReferences();
-                        s.delete();
+                        var found = ApplicationContext.Services.FileService.GetTemplate(nId);
+                        if (found != null)
+                        {
+                            ApplicationContext.Services.FileService.DeleteTemplate(found.Alias, UmbracoUser.Id);
+                        }
                         _pack.Data.Templates.Remove(nId.ToString());
                     }
                 }
@@ -545,7 +547,7 @@ namespace umbraco.presentation.developer.packages
                     }
                 }
                 _pack.Save();
-                _pack.Delete();
+                _pack.Delete(UmbracoUser.Id);
 
                 pane_uninstalled.Visible = true;
                 pane_uninstall.Visible = false;

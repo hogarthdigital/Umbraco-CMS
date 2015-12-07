@@ -652,20 +652,13 @@ namespace Umbraco.Core.Services
                     if (dataTypeDefinition == null) continue;
                 }
 
-                var propertyType = new PropertyType(dataTypeDefinition)
+                var propertyType = new PropertyType(dataTypeDefinition, property.Element("Alias").Value)
                                        {
-                                           Alias = property.Element("Alias").Value,
                                            Name = property.Element("Name").Value,
                                            Description = property.Element("Description").Value,
                                            Mandatory = property.Element("Mandatory").Value.ToLowerInvariant().Equals("true"),
-                                           ValidationRegExp = property.Element("Validation").Value
+                                           ValidationRegExp = property.Element("Validation").Value,
                                        };
-
-                var helpTextElement = property.Element("HelpText");
-                if (helpTextElement != null)
-                {
-                    propertyType.HelpText = helpTextElement.Value;
-                }
 
                 var tab = property.Element("Tab").Value;
                 if (string.IsNullOrEmpty(tab))
@@ -835,7 +828,7 @@ namespace Umbraco.Core.Services
                     else
                     {
                         //the Id field is actually the string property editor Alias
-                        var dataTypeDefinition = new DataTypeDefinition(-1, dataTypeElement.Attribute("Id").Value.Trim())
+                        var dataTypeDefinition = new DataTypeDefinition(dataTypeElement.Attribute("Id").Value.Trim())
                         {
                             Key = dataTypeDefinitionId,
                             Name = dataTypeDefinitionName,
@@ -1226,7 +1219,7 @@ namespace Umbraco.Core.Services
                         sortOrder = int.Parse(sortOrderAttribute.Value);
                     }
 
-                    if (macro.Properties.Any(x => x.Alias == propertyAlias)) continue;
+                    if (macro.Properties.Any(x => string.Equals(x.Alias, propertyAlias, StringComparison.OrdinalIgnoreCase))) continue;
                     macro.Properties.Add(new MacroProperty(propertyAlias, propertyName, sortOrder, editorAlias));
                     sortOrder++;
                 }

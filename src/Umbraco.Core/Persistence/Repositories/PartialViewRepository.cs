@@ -9,7 +9,7 @@ using Umbraco.Core.Persistence.UnitOfWork;
 
 namespace Umbraco.Core.Persistence.Repositories
 {
-    internal class PartialViewRepository : FileRepository<string, PartialView>, IPartialViewRepository
+    internal class PartialViewRepository : FileRepository<string, IPartialView>, IPartialViewRepository
     {
         public PartialViewRepository(IUnitOfWork work)
 			: this(work, new PhysicalFileSystem(SystemDirectories.MvcViews + "/Partials/"))
@@ -20,46 +20,55 @@ namespace Umbraco.Core.Persistence.Repositories
         {
         }
 
-        public override PartialView Get(string id)
+        protected virtual PartialViewType ViewType { get { return PartialViewType.PartialView; } }
+
+        public override IPartialView Get(string id)
         {
-            if (FileSystem.FileExists(id) == false)
-            {
-                return null;
-            }
-
-            string content;
-            using (var stream = FileSystem.OpenFile(id))
-            {
-                var bytes = new byte[stream.Length];
-                stream.Position = 0;
-                stream.Read(bytes, 0, (int)stream.Length);
-                content = Encoding.UTF8.GetString(bytes);
-            }
-
+            // get the relative path within the filesystem
+            // (though... id should be relative already)
             var path = FileSystem.GetRelativePath(id);
+
+            if (FileSystem.FileExists(path) == false)
+                return null;
+
+            // content will be lazy-loaded when required
             var created = FileSystem.GetCreated(path).UtcDateTime;
             var updated = FileSystem.GetLastModified(path).UtcDateTime;
+            //var content = GetFileContent(path);
 
-
-            var script = new PartialView(path)
+            var view = new PartialView(path, file => GetFileContent(file.OriginalPath))
             {
                 //id can be the hash
                 Id = path.GetHashCode(),
-                Content = content,
                 Key = path.EncodeAsGuid(),
+                //Content = content,
                 CreateDate = created,
                 UpdateDate = updated,
-                VirtualPath = FileSystem.GetUrl(id)
+                VirtualPath = FileSystem.GetUrl(id),
+                ViewType = ViewType
             };
 
             //on initial construction we don't want to have dirty properties tracked
             // http://issues.umbraco.org/issue/U4-1946
-            script.ResetDirtyProperties(false);
+            view.ResetDirtyProperties(false);
 
-            return script;
+            return view;
         }
 
-        public override IEnumerable<PartialView> GetAll(params string[] ids)
+        public override void AddOrUpdate(IPartialView entity)
+        {
+            var partialView = entity as PartialView;
+            if (partialView != null)
+                partialView.ViewType = ViewType;
+
+            base.AddOrUpdate(entity);
+
+            // ensure that from now on, content is lazy-loaded
+            if (partialView != null && partialView.GetFileContent == null)
+                partialView.GetFileContent = file => GetFileContent(file.OriginalPath);
+        }
+
+        public override IEnumerable<IPartialView> GetAll(params string[] ids)
         {
             //ensure they are de-duplicated, easy win if people don't do this as this can cause many excess queries
             ids = ids.Distinct().ToArray();
@@ -73,12 +82,35 @@ namespace Umbraco.Core.Persistence.Repositories
             }
             else
             {
-                var files = FindAllFiles("");
+                var files = FindAllFiles("", "*.*");
                 foreach (var file in files)
                 {
                     yield return Get(file);
                 }
             }
+        }
+
+        private static readonly List<string> ValidExtensions = new List<string> { "cshtml" };
+
+        public virtual bool ValidatePartialView(IPartialView partialView)
+        {
+            // get full path
+            string fullPath;
+            try
+            {
+                // may throw for security reasons
+                fullPath = FileSystem.GetFullPath(partialView.Path);
+            }
+            catch
+            {
+                return false;
+            }
+
+            // validate path & extension
+            var validDir = SystemDirectories.MvcViews;
+            var isValidPath = IOHelper.VerifyEditPath(fullPath, validDir);
+            var isValidExtension = IOHelper.VerifyFileExtension(fullPath, ValidExtensions);
+            return isValidPath && isValidExtension;
         }
 
         /// <summary>
