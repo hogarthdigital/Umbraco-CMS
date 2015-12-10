@@ -398,7 +398,7 @@ namespace Umbraco.Core
 
             if (currentTry == 5)
             {
-                throw new UmbracoStartupFailedException("Umbraco cannot start. A connection string is configured but the Umbraco cannot connect to the database.");
+                throw new UmbracoStartupFailedException(string.Format("Umbraco cannot start. A connection string is configured but the Umbraco cannot connect to the database.\r\n{0}", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(ApplicationContext.DatabaseContext.ConnectionString), Base64FormattingOptions.InsertLineBreaks)));
             }
         }
 

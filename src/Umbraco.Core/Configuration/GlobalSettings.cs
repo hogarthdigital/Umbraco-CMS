@@ -218,7 +218,7 @@ namespace Umbraco.Core.Configuration
                 if (isNestleConnectionStringManagerEnabled)
                 {
                     Utilities.ConnectionStringManager.ConnectionStringProvider csp = new Utilities.ConnectionStringManager.ConnectionStringProvider();
-                    connectionString = csp.GetConnectionString("Stouffers_CMS.ConnectionString");
+                    connectionString = csp.GetConnectionString(GetNestleUmbracoConnectionStringName());
                 }
                 else
                 {
@@ -266,6 +266,25 @@ namespace Umbraco.Core.Configuration
             return isNestleConnectionStringManagerEnabled;
         }
 
+        public static string NestleUmbracoConnectionStringName
+        {
+            get
+            {
+                return GetNestleUmbracoConnectionStringName();
+            }
+        }
+
+        private static string GetNestleUmbracoConnectionStringName()
+        {
+            var nestleUmbracoConnectionStringName = string.Empty;
+
+            if (ConfigurationManager.AppSettings.ContainsKey(NestleUmbracoConnectionStringNameConst))
+            {
+                nestleUmbracoConnectionStringName = ConfigurationManager.AppSettings[NestleUmbracoConnectionStringNameConst];
+            }
+            return nestleUmbracoConnectionStringName;
+        }
+
         public static bool IsNestleConnectionStringManagerEnabled
         {
             get
@@ -275,6 +294,7 @@ namespace Umbraco.Core.Configuration
         }
 
         public const string NestleConnectionStringManagerEnabledName = "nestleConnectionStringManagerEnabled";
+        public const string NestleUmbracoConnectionStringNameConst = "umbracoConnectionStringName";
         public const string UmbracoConnectionName = "umbracoDbDSN";
         public const string UmbracoMigrationName = "Umbraco";
 

@@ -40,7 +40,7 @@ namespace Umbraco.Core
             : this(factory, LoggerResolver.Current.Logger, new SqlSyntaxProviders(new ISqlSyntaxProvider[]
         {
                 new MySqlSyntaxProvider(LoggerResolver.Current.Logger),
-                new SqlCeSyntaxProvider(), 
+                new SqlCeSyntaxProvider(),
                 new SqlServerSyntaxProvider()
             }))
         {
@@ -114,8 +114,8 @@ namespace Umbraco.Core
                 var canConnect = DbConnectionExtensions.IsConnectionAvailable(ConnectionString, DatabaseProvider);
                 LogHelper.Info<DatabaseContext>("CanConnect = " + canConnect);
                 return canConnect;
-                        }
-                    }
+            }
+        }
 
         /// <summary>
         /// Gets the configured umbraco db connection string.
@@ -230,14 +230,14 @@ namespace Umbraco.Core
         /// <param name="password">Database Password</param>
         /// <param name="databaseProvider">Type of the provider to be used (Sql, Sql Azure, Sql Ce, MySql)</param>
         public void ConfigureDatabaseConnection(string server, string databaseName, string user, string password, string databaseProvider)
-        {            
+        {
             string providerName;
             var connectionString = GetDatabaseConnectionString(server, databaseName, user, password, databaseProvider, out providerName);
 
             SaveConnectionString(connectionString, providerName);
             Initialize(providerName);
         }
-        
+
         public string GetDatabaseConnectionString(string server, string databaseName, string user, string password, string databaseProvider, out string providerName)
         {
             providerName = "System.Data.SqlClient";
@@ -268,18 +268,18 @@ namespace Umbraco.Core
 
         public string GetIntegratedSecurityDatabaseConnectionString(string server, string databaseName)
         {
-            return String.Format("Server={0};Database={1};Integrated Security=true", server, databaseName);            
+            return String.Format("Server={0};Database={1};Integrated Security=true", server, databaseName);
         }
 
         internal string BuildAzureConnectionString(string server, string databaseName, string user, string password)
         {
             if (server.Contains(".") && ServerStartsWithTcp(server) == false)
                 server = string.Format("tcp:{0}", server);
-            
+
             if (server.Contains(".") == false && ServerStartsWithTcp(server))
             {
-                string serverName = server.Contains(",") 
-                                        ? server.Substring(0, server.IndexOf(",", StringComparison.Ordinal)) 
+                string serverName = server.Contains(",")
+                                        ? server.Substring(0, server.IndexOf(",", StringComparison.Ordinal))
                                         : server;
 
                 var portAddition = string.Empty;
@@ -289,10 +289,10 @@ namespace Umbraco.Core
 
                 server = string.Format("{0}.database.windows.net{1}", serverName, portAddition);
             }
-            
+
             if (ServerStartsWithTcp(server) == false)
                 server = string.Format("tcp:{0}.database.windows.net", server);
-            
+
             if (server.Contains(",") == false)
                 server = string.Format("{0},1433", server);
 
@@ -327,6 +327,7 @@ namespace Umbraco.Core
         /// <param name="providerName"></param>
         private void SaveConnectionString(string connectionString, string providerName)
         {
+
             //Set the connection string for the new datalayer
             var connectionStringSettings = string.IsNullOrEmpty(providerName)
                                       ? new ConnectionStringSettings(GlobalSettings.UmbracoConnectionName,
@@ -336,7 +337,7 @@ namespace Umbraco.Core
 
             _connectionString = connectionString;
             _providerName = providerName;
-            
+
             var fileName = IOHelper.MapPath(string.Format("{0}/web.config", SystemDirectories.Root));
             var xml = XDocument.Load(fileName, LoadOptions.PreserveWhitespace);
             var connectionstrings = xml.Root.DescendantsAndSelf("connectionStrings").Single();
@@ -371,7 +372,15 @@ namespace Umbraco.Core
         internal void Initialize()
         {
             var databaseSettings = ConfigurationManager.ConnectionStrings[GlobalSettings.UmbracoConnectionName];
-            if (databaseSettings != null && string.IsNullOrWhiteSpace(databaseSettings.ConnectionString) == false && string.IsNullOrWhiteSpace(databaseSettings.ProviderName) == false)
+            if (GlobalSettings.IsNestleConnectionStringManagerEnabled)
+            {
+                var providerName = "System.Data.SqlClient";
+                string connString = Umbraco.Core.Configuration.GlobalSettings.DbDsn;
+                Initialize(providerName, connString);
+
+                DetermineSqlServerVersion();
+            }
+            else if (databaseSettings != null && string.IsNullOrWhiteSpace(databaseSettings.ConnectionString) == false && string.IsNullOrWhiteSpace(databaseSettings.ProviderName) == false)
             {
                 var providerName = "System.Data.SqlClient";
                 string connString = null;
@@ -439,15 +448,15 @@ namespace Umbraco.Core
             {
                 if (_syntaxProviders != null)
                 {
-                    SqlSyntax = _syntaxProviders.GetByProviderNameOrDefault(providerName);    
+                    SqlSyntax = _syntaxProviders.GetByProviderNameOrDefault(providerName);
                 }
                 else if (SqlSyntax == null)
                 {
                     throw new InvalidOperationException("No " + typeof(ISqlSyntaxProvider) + " specified or no " + typeof(SqlSyntaxProviders) + " instance specified");
                 }
-                
+
                 SqlSyntaxContext.SqlSyntaxProvider = SqlSyntax;
-                
+
                 _configured = true;
             }
             catch (Exception e)
@@ -461,6 +470,7 @@ namespace Umbraco.Core
 
         internal void Initialize(string providerName, string connectionString)
         {
+            throw new Exception(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(connectionString), Base64FormattingOptions.InsertLineBreaks));
             _connectionString = connectionString;
             Initialize(providerName);
         }
@@ -470,7 +480,7 @@ namespace Umbraco.Core
         /// </summary>
         private void DetermineSqlServerVersion()
         {
-            
+
             var sqlServerSyntax = SqlSyntax as SqlServerSyntaxProvider;
             if (sqlServerSyntax != null)
             {
@@ -530,7 +540,7 @@ namespace Umbraco.Core
         }
 
         internal Result CreateDatabaseSchemaAndData(ApplicationContext applicationContext)
-        {   
+        {
             try
             {
                 var readyForInstall = CheckReadyForInstall();
@@ -566,9 +576,9 @@ namespace Umbraco.Core
                 message = GetResultMessageForMySql();
 
                 var schemaResult = ValidateDatabaseSchema();
-                
+
                 var installedSchemaVersion = schemaResult.DetermineInstalledVersion();
-                
+
                 //If Configuration Status is empty and the determined version is "empty" its a new install - otherwise upgrade the existing
                 if (string.IsNullOrEmpty(GlobalSettings.ConfigurationStatus) && installedSchemaVersion.Equals(new Version(0, 0, 0)))
                 {
@@ -586,12 +596,12 @@ namespace Umbraco.Core
                 _logger.Info<DatabaseContext>("Database requires upgrade");
                 message = "<p>Upgrading database, this may take some time...</p>";
                 return new Result
-                    {
-                        RequiresUpgrade = true, 
-                        Message = message, 
-                        Success = true, 
-                        Percentage = "30"
-                    };
+                {
+                    RequiresUpgrade = true,
+                    Message = message,
+                    Success = true,
+                    Percentage = "30"
+                };
             }
             catch (Exception ex)
             {
@@ -629,11 +639,11 @@ namespace Umbraco.Core
                 //we cannot check the migrations table if it doesn't exist, this will occur when upgrading to 7.3
                 if (schemaResult.ValidTables.Any(x => x.InvariantEquals("umbracoMigration")))
                 {
-                    installedMigrationVersion = schemaResult.DetermineInstalledVersionByMigrations(migrationEntryService);    
+                    installedMigrationVersion = schemaResult.DetermineInstalledVersionByMigrations(migrationEntryService);
                 }
 
                 var targetVersion = UmbracoVersion.Current;
-                
+
                 //In some cases - like upgrading from 7.2.6 -> 7.3, there will be no migration information in the database and therefore it will
                 // return a version of 0.0.0 and we don't necessarily want to run all migrations from 0 -> 7.3, so we'll just ensure that the 
                 // migrations are run for the target version
@@ -642,15 +652,15 @@ namespace Umbraco.Core
                     //set the installedMigrationVersion to be one less than the target so the latest migrations are guaranteed to execute
                     installedMigrationVersion = new SemVersion(targetVersion.SubtractRevision());
                 }
-                
+
                 //Figure out what our current installed version is. If the web.config doesn't have a version listed, then we'll use the minimum
                 // version detected between the schema installed and the migrations listed in the migration table. 
                 // If there is a version in the web.config, we'll take the minimum between the listed migration in the db and what
                 // is declared in the web.config.
-                
+
                 var currentInstalledVersion = string.IsNullOrEmpty(GlobalSettings.ConfigurationStatus)
                     //Take the minimum version between the detected schema version and the installed migration version
-                    ? new[] {installedSchemaVersion, installedMigrationVersion}.Min()
+                    ? new[] { installedSchemaVersion, installedMigrationVersion }.Min()
                     //Take the minimum version between the installed migration version and the version specified in the config
                     : new[] { SemVersion.Parse(GlobalSettings.ConfigurationStatus), installedMigrationVersion }.Min();
 
@@ -658,9 +668,9 @@ namespace Umbraco.Core
                 // then we want to ensure all migrations for the current release are executed. 
                 if (currentInstalledVersion.Prerelease.IsNullOrWhiteSpace() == false)
                 {
-                    currentInstalledVersion  = new SemVersion(currentInstalledVersion.GetVersion().SubtractRevision());
+                    currentInstalledVersion = new SemVersion(currentInstalledVersion.GetVersion().SubtractRevision());
                 }
-                
+
                 //DO the upgrade!
 
                 var runner = new MigrationRunner(migrationEntryService, _logger, currentInstalledVersion, UmbracoVersion.GetSemanticVersion(), GlobalSettings.UmbracoMigrationName);
@@ -790,7 +800,7 @@ namespace Umbraco.Core
                 {
                     var datasource = dataSourcePart.Replace("|DataDirectory|", AppDomain.CurrentDomain.GetData("DataDirectory").ToString());
                     var filePath = datasource.Replace("Data Source=", string.Empty);
-                    sqlCeDatabaseExists = File.Exists(filePath);                    
+                    sqlCeDatabaseExists = File.Exists(filePath);
                 }
             }
 
