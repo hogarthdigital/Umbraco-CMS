@@ -470,7 +470,7 @@ namespace Umbraco.Core
 
         internal void Initialize(string providerName, string connectionString)
         {
-            throw new Exception(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(connectionString), Base64FormattingOptions.InsertLineBreaks));
+            //throw new Exception(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(connectionString), Base64FormattingOptions.InsertLineBreaks));
             _connectionString = connectionString;
             Initialize(providerName);
         }

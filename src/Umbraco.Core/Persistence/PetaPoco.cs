@@ -159,25 +159,36 @@ namespace Umbraco.Core.Persistence
 
 		public Database(string connectionStringName)
 		{
-			// Use first?
-			if (connectionStringName == "")
-				connectionStringName = ConfigurationManager.ConnectionStrings[0].Name;
 
-			// Work out connection string and provider name
-			var providerName = "System.Data.SqlClient";
-			if (ConfigurationManager.ConnectionStrings[connectionStringName] != null)
-			{
-				if (!string.IsNullOrEmpty(ConfigurationManager.ConnectionStrings[connectionStringName].ProviderName))
-					providerName = ConfigurationManager.ConnectionStrings[connectionStringName].ProviderName;
-			}
-			else
-			{
-				throw new InvalidOperationException("Can't find a connection string with the name '" + connectionStringName + "'");
-			}
 
-			// Store factory and connection string
-			_connectionString = ConfigurationManager.ConnectionStrings[connectionStringName].ConnectionString;
-			_providerName = providerName;
+            // Work out connection string and provider name
+            var providerName = "System.Data.SqlClient";
+
+            if (Umbraco.Core.Configuration.GlobalSettings.IsNestleConnectionStringManagerEnabled)
+            {
+                _connectionString = Umbraco.Core.Configuration.GlobalSettings.DbDsn;
+            }
+            else
+            {
+                // Use first?
+                if (connectionStringName == "")
+                    connectionStringName = ConfigurationManager.ConnectionStrings[0].Name;
+                if (ConfigurationManager.ConnectionStrings[connectionStringName] != null)
+                {
+                    if (!string.IsNullOrEmpty(ConfigurationManager.ConnectionStrings[connectionStringName].ProviderName))
+                        providerName = ConfigurationManager.ConnectionStrings[connectionStringName].ProviderName;
+                }
+                else
+                {
+                    throw new InvalidOperationException("Can't find a connection string with the name '" + connectionStringName + "'");
+                }
+
+                // Store factory and connection string
+                _connectionString = ConfigurationManager.ConnectionStrings[connectionStringName].ConnectionString;
+
+            }
+
+            _providerName = providerName;
 			CommonConstruct();
 		}
 
