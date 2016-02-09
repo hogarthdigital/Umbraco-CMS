@@ -100,6 +100,8 @@ namespace Umbraco.Core.Services
 
             xml.Add(new XAttribute("loginName", member.Username));
             xml.Add(new XAttribute("email", member.Email));
+            
+            xml.Add(new XAttribute("icon", member.ContentType.Icon));
 
             return xml;
         }
@@ -377,6 +379,7 @@ namespace Umbraco.Core.Services
                                                    new XElement("Type", propertyType.PropertyEditorAlias),
                                                    new XElement("Definition", definition.Key),
                                                    new XElement("Tab", propertyGroup == null ? "" : propertyGroup.Name),
+                                                   new XElement("SortOrder", propertyType.SortOrder),
                                                    new XElement("Mandatory", propertyType.Mandatory.ToString()),
                                                    new XElement("Validation", propertyType.ValidationRegExp),
                                                    new XElement("Description", new XCData(propertyType.Description)));

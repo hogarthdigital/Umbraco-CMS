@@ -1,18 +1,17 @@
 //this controller simply tells the dialogs service to open a mediaPicker window
 //with a specified callback, this callback will receive an object with a selection on it
 angular.module('umbraco').controller("Umbraco.PropertyEditors.MediaPickerController",
-    function ($rootScope, $scope, dialogService, entityResource, mediaResource, mediaHelper, $timeout, userService) {
+    function ($rootScope, $scope, dialogService, entityResource, mediaResource, mediaHelper, $timeout, userService, angularHelper) {
 
         //check the pre-values for multi-picker
         var multiPicker = $scope.model.config.multiPicker && $scope.model.config.multiPicker !== '0' ? true : false;
+        var onlyImages = $scope.model.config.onlyImages && $scope.model.config.onlyImages !== '0' ? true : false;
 
         if (!$scope.model.config.startNodeId) {
             userService.getCurrentUser().then(function (userData) {
                 $scope.model.config.startNodeId = userData.startMediaId;
             });
         }
-            
-
          
         function setupViewModel() {
             $scope.images = [];
@@ -54,6 +53,7 @@ angular.module('umbraco').controller("Umbraco.PropertyEditors.MediaPickerControl
         $scope.remove = function(index) {
             $scope.images.splice(index, 1);
             $scope.ids.splice(index, 1);
+            angularHelper.getCurrentForm($scope).$setDirty();
             $scope.sync();
         };
 
@@ -61,6 +61,7 @@ angular.module('umbraco').controller("Umbraco.PropertyEditors.MediaPickerControl
             dialogService.mediaPicker({
                 startNodeId: $scope.model.config.startNodeId,
                 multiPicker: multiPicker,
+                onlyImages: onlyImages,
                 callback: function(data) {
                     
                     //it's only a single selector, so make it into an array
@@ -76,6 +77,7 @@ angular.module('umbraco').controller("Umbraco.PropertyEditors.MediaPickerControl
 
                         $scope.images.push(media);
                         $scope.ids.push(media.id);
+                        angularHelper.getCurrentForm($scope).$setDirty();
                     });
 
                     $scope.sync();

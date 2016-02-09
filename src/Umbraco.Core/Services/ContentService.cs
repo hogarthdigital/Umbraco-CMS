@@ -152,6 +152,9 @@ namespace Umbraco.Core.Services
         {
             var contentType = FindContentTypeByAlias(contentTypeAlias);
             var content = new Content(name, parentId, contentType);
+            var parent = GetById(content.ParentId);
+            content.Path = string.Concat(parent.IfNotNull(x => x.Path, content.ParentId.ToString()), ",", content.Id);
+
 
             if (Creating.IsRaisedEventCancelled(new NewEventArgs<IContent>(content, contentTypeAlias, parentId), this))
             {
@@ -190,8 +193,11 @@ namespace Umbraco.Core.Services
         /// <returns><see cref="IContent"/></returns>
         public IContent CreateContent(string name, IContent parent, string contentTypeAlias, int userId = 0)
         {
+            if (parent == null) throw new ArgumentNullException("parent");
+
             var contentType = FindContentTypeByAlias(contentTypeAlias);
             var content = new Content(name, parent, contentType);
+            content.Path = string.Concat(parent.Path, ",", content.Id);
 
             if (Creating.IsRaisedEventCancelled(new NewEventArgs<IContent>(content, contentTypeAlias, parent), this))
             {
@@ -225,7 +231,7 @@ namespace Umbraco.Core.Services
         public IContent CreateContentWithIdentity(string name, int parentId, string contentTypeAlias, int userId = 0)
         {
             var contentType = FindContentTypeByAlias(contentTypeAlias);
-            var content = new Content(name, parentId, contentType);
+            var content = new Content(name, parentId, contentType);            
 
             //NOTE: I really hate the notion of these Creating/Created events - they are so inconsistent, I've only just found
             // out that in these 'WithIdentity' methods, the Saving/Saved events were not fired, wtf. Anyways, they're added now.
@@ -276,6 +282,8 @@ namespace Umbraco.Core.Services
         /// <returns><see cref="IContent"/></returns>
         public IContent CreateContentWithIdentity(string name, IContent parent, string contentTypeAlias, int userId = 0)
         {
+            if (parent == null) throw new ArgumentNullException("parent");
+
             var contentType = FindContentTypeByAlias(contentTypeAlias);
             var content = new Content(name, parent, contentType);
 
@@ -445,6 +453,9 @@ namespace Umbraco.Core.Services
         /// <returns>An Enumerable list of <see cref="IContent"/> objects</returns>
         public IEnumerable<IContent> GetAncestors(IContent content)
         {
+            //null check otherwise we get exceptions
+            if (content.Path.IsNullOrWhiteSpace()) return Enumerable.Empty<IContent>();
+
             var ids = content.Path.Split(',').Where(x => x != Constants.System.Root.ToInvariantString() && x != content.Id.ToString(CultureInfo.InvariantCulture)).Select(int.Parse).ToArray();
             if (ids.Any() == false)
                 return new List<IContent>();
@@ -1216,6 +1227,13 @@ namespace Umbraco.Core.Services
         /// <param name="userId">Optional Id of the user issueing the delete operation</param>
         public void DeleteContentOfType(int contentTypeId, int userId = 0)
         {
+            //TODO: This currently this is called from the ContentTypeService but that needs to change, 
+            // if we are deleting a content type, we should just delete the data and do this operation slightly differently.
+            // This method will recursively go lookup every content item, check if any of it's descendants are
+            // of a different type, move them to the recycle bin, then permanently delete the content items. 
+            // The main problem with this is that for every content item being deleted, events are raised...
+            // which we need for many things like keeping caches in sync, but we can surely do this MUCH better.
+
             using (new WriteLock(Locker))
             {
                 using (var uow = UowProvider.GetUnitOfWork())
@@ -1966,6 +1984,10 @@ namespace Umbraco.Core.Services
                 var uow = UowProvider.GetUnitOfWork();
                 using (var repository = RepositoryFactory.CreateContentRepository(uow))
                 {
+                    if (published == false)
+                    {
+                        content.ChangePublishedState(PublishedState.Saved);
+                    }
                     //Since this is the Save and Publish method, the content should be saved even though the publish fails or isn't allowed
                     if (content.HasIdentity == false)
                     {
@@ -2107,6 +2129,22 @@ namespace Umbraco.Core.Services
                         "Content '{0}' with Id '{1}' could not be published because its parent is not published.",
                         content.Name, content.Id));
                 return PublishStatusType.FailedPathNotPublished;
+            }
+            else if (content.ExpireDate.HasValue && content.ExpireDate.Value > DateTime.MinValue && DateTime.Now > content.ExpireDate.Value)
+            {
+                Logger.Info<ContentService>(
+                    string.Format(
+                        "Content '{0}' with Id '{1}' has expired and could not be published.",
+                        content.Name, content.Id));
+                return PublishStatusType.FailedHasExpired;
+            }
+            else if (content.ReleaseDate.HasValue && content.ReleaseDate.Value > DateTime.MinValue && content.ReleaseDate.Value > DateTime.Now)
+            {
+                Logger.Info<ContentService>(
+                    string.Format(
+                        "Content '{0}' with Id '{1}' is awaiting release and could not be published.",
+                        content.Name, content.Id));
+                return PublishStatusType.FailedAwaitingRelease;
             }
 
             return PublishStatusType.Success;

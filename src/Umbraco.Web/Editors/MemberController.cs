@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using System.Web;
 using System.Web.Http;
 using System.Web.Http.ModelBinding;
 using System.Web.Security;
@@ -134,7 +135,7 @@ namespace Umbraco.Web.Editors
                 ParentId = -1
             };
 
-            TabsAndPropertiesResolver.AddListView(display, "member", Services.DataTypeService);
+            TabsAndPropertiesResolver.AddListView(display, "member", Services.DataTypeService, Services.TextService);
 
             return display;
         }
@@ -284,6 +285,9 @@ namespace Umbraco.Web.Editors
                 case ContentSaveAction.SaveNew:
                     MembershipCreateStatus status;
                     CreateWithMembershipProvider(contentItem, out status);
+
+                    // save the ID of the creator
+                    contentItem.PersistedContent.CreatorId = Security.CurrentUser.Id;
                     break;
                 default:
                     //we don't support anything else for members
@@ -339,12 +343,13 @@ namespace Umbraco.Web.Editors
             //lasty, if it is not valid, add the modelstate to the outgoing object and throw a 403
             HandleInvalidModelState(display);
 
+            var localizedTextService = Services.TextService;
             //put the correct msgs in 
             switch (contentItem.Action)
             {
                 case ContentSaveAction.Save:
                 case ContentSaveAction.SaveNew:
-                    display.AddSuccessNotification(ui.Text("speechBubbles", "editMemberSaved"), ui.Text("speechBubbles", "editMemberSaved"));
+                    display.AddSuccessNotification(localizedTextService.Localize("speechBubbles/editMemberSaved"), localizedTextService.Localize("speechBubbles/editMemberSaved"));
                     break;
             }
 
